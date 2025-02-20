@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Priority List</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 20px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+    th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+    th { background-color: #f4f4f4; }
+    form { margin-bottom: 20px; }
+  </style>
+</head>
+<body>
+  <h1>Tech Trip Prioritization</h1>
+  <script>
+    // Validate that the weights add up to 1.
+    function validateWeights() {
+      let w1 = parseFloat(document.getElementById("w1").value) || 0;
+      let w2 = parseFloat(document.getElementById("w2").value) || 0;
+      let w3 = parseFloat(document.getElementById("w3").value) || 0;
+      let w4 = parseFloat(document.getElementById("w4").value) || 0;
+      let sum = w1 + w2 + w3 + w4;
+      if (Math.abs(sum - 1) > 0.001) {
+        alert("Error: The sum of weights must be exactly 1.");
+        return false;
+      }
+      return true;
+    }
+    
+    // Update a row with new data from the server.
+    function updateRow(site, data) {
+        let row = document.querySelector(`tr[data-site="${site}"]`);
+        if (!row || !data) return;
+        
+        let priorityElem = row.querySelector(".priority");
+        if (priorityElem)
+            priorityElem.innerText = (data.priority !== undefined) ? parseFloat(data.priority).toFixed(2) : "N/A";
+        
+        let adjustedPriorityElem = row.querySelector(".adjusted-priority");
+        if (adjustedPriorityElem)
+            adjustedPriorityElem.innerText = (data.adjustedPriority !== undefined) ? parseFloat(data.adjustedPriority).toFixed(2) : "N/A";
+        
+        let daysSinceElem = row.querySelector(".days-since-last");
+        if (daysSinceElem)
+            daysSinceElem.innerText = (data.daysSinceLastVisit !== undefined) ? data.daysSinceLastVisit : "N/A";
+        
+        let nextVisitElem = row.querySelector(".next-visit");
+        if (nextVisitElem)
+            nextVisitElem.innerText = data.nextVisitForecast || "N/A";
+        
+        let lastVisitElem = row.querySelector(".last-visit");
+        if (lastVisitElem)
+            lastVisitElem.innerText = data.lastVisitDate || "";
+        
+        let priorityLevelElem = row.querySelector(".priority-level");
+        if (priorityLevelElem) {
+            priorityLevelElem.innerText = data.priorityLevel || "N/A";
+            priorityLevelElem.style.color = getPriorityColor(data.priorityLevel);
+        }
+    }
+  
+    // Return a color based on priority level.
+    function getPriorityColor(priorityLevel) {
+      switch (priorityLevel) {
+          case "Urgent": return "red";
+          case "High": return "orange";
+          case "Medium": return "gold";
+          case "Low": return "blue";
+          default: return "black";
+      }
+    }
+  
+    // Fetch updated priority data from the server.
+    function refreshPriority() {
+        fetch("/refresh_priority")
+        .then(response => response.json())
+        .then(updatedData => {
+            updatedData.forEach(row => {
+                updateRow(row.site, row);
+            });
+        })
+        .catch(error => console.error("Error refreshing priority:", error));
+    }
+  
+    // Update the robots count for a site.
+    function updateRobots(site, change) {
+        fetch(`/update_robots`, {
+            method: "POST",
+            body: new URLSearchParams({ site: site, change: change }),
+            headers: { "Content-Type": "application/x-www-form-urlencoded" }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                document.getElementById(`robots-count-${site}`).innerText = data.new_value;
+            } else {
+                alert("Update failed: " + data.error);
+            }
+        })
+        .catch(error => console.error("Error updating robots:", error));
+    }
+
+    function updateForecast(site) {
+      if (!confirm("Would you like to create or update the partner visit date forecast?")) {
+        return; // Exit if the user cancels.
+      }
+      
+      fetch("/update_forecast", {
+          method: "POST",
+          body: JSON.stringify({ site: site }),
+          headers: { "Content-Type": "application/json" }
+      })
+      .then(response => response.json())
+      .then(data => {
+          if (data.success) {
+              alert("Forecast updated successfully!");
+              let nextVisitElem = document.querySelector(`tr[data-site='${site}'] .next-visit`);
+              if (nextVisitElem) {
+                  nextVisitElem.innerText = data.new_forecast;
+              }
+          } else {
+              alert("Error updating forecast: " + data.error);
+          }
+      })
+      .catch(error => console.error("Error updating forecast:", error));
+    }
+    
+    // Log an actual visit and update the row.
+    function logActualVisit(site) {
+        fetch("/log_actual_visit", {
+            method: "POST",
+            body: JSON.stringify({ site: site }),
+            headers: { "Content-Type": "application/json" }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alert(`${data.robots_fixed} robots fixed – Confirm Visit`);
+                document.querySelector(`tr[data-site='${site}'] .last-visit`).innerText = data.visit_date;
+            } else {
+                alert("Error logging visit: " + data.error);
+            }
+        })
+        .catch(error => console.error("Error logging visit:", error));
+    }
+  
+    // Automatically refresh priority every second.
+    setInterval(refreshPriority, 1000);
+  </script>
+  
+  <form method="POST" onsubmit="return validateWeights();">
+    <label for="w1">Weight for Tickets (w1):</label>
+    <input type="number" step="0.05" id="w1" name="w1" value="{{ weights.w1 }}" required>
+    <br>
+    <label for="w2">Weight for Orders (w2):</label>
+    <input type="number" step="0.05" id="w2" name="w2" value="{{ weights.w2 }}" required>
+    <br>
+    <label for="w3">Weight for Trip Cost (w3):</label>
+    <input type="number" step="0.05" id="w3" name="w3" value="{{ weights.w3 }}" required>
+    <br>
+    <label for="w4">Weight for Operational Robots % (w4):</label>
+    <input type="number" step="0.05" id="w4" name="w4" value="{{ weights.w4 }}">
+    <br><br>
+    <button type="submit">Update Weights</button>
+  </form>
+
+  {% if error %}
+    <p style="color: red;">{{ error }}</p>
+  {% endif %}
+  
+  <p>
+    <a href="/report" style="font-size: 1.2em; font-weight: bold;">View Report</a>
+  </p>  
+
+  <table>
+    <thead>
+      <tr>
+        <th>Site</th>
+        <th>Zone</th>
+        <th>Tickets</th>
+        <th>Orders</th>
+        <th>Trip Cost</th>
+        <th>Operational Robots</th>
+        <th>Actions</th>
+        <th>Forecast Update</th>
+        <th>Priority</th>
+        <th>Adjusted Priority</th>
+        <th>Last Visit Date</th>
+        <th>Days Since Last Visit</th>
+        <th>Next Visit Forecast</th>
+        <th>On-Time Performance</th>
+        <th>Priority Level</th>
+        <th>Mark as Visited</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for zone, stores in data|groupby('Zone') %}
+      <tr style="background-color: #eee; font-weight: bold;">
+        <td colspan="16">Zone: {{ zone }}</td>
+      </tr>
+      {% for row in stores %}
+      <tr data-site="{{ row['Site'] }}">
+        <td>{{ row['Site'] }}</td>
+        <td>{{ row['Zone'] }}</td>
+        <td>{{ row['Tickets'] }}</td>
+        <td>{{ row['Orders'] }}</td>
+        <td>{{ row['TripCost'] }}</td>
+        <td><span id="robots-count-{{ row['Site'] }}">{{ row["Operational_Robots"] }}</span> / {{ row["Total_Robots"] }}</td>
+        <td>
+          <button onclick="updateRobots('{{ row['Site'] }}', -1)">➖</button>
+          <button onclick="updateRobots('{{ row['Site'] }}', 'reset')">🔄 Reset</button>
+          <button onclick="updateRobots('{{ row['Site'] }}', 1)">➕</button>
+        </td>
+        <td>
+          <button onclick="updateForecast('{{ row['Site'] }}')">Update Forecast</button>
+        </td>
+        <td class="priority">{{ row["Priority"] | round(2) }}</td>
+        <td class="adjusted-priority">{{ row["Adjusted Priority"] | round(2) }}</td>
+        <td class="last-visit">{{ row["Last_Visit_Date_str"] }}</td>
+        <td class="days-since-last">
+          {% if row["Last_Visit_Date_str"] == "No Visit Yet" %}
+            No Visit Yet
+          {% else %}
+            {{ row["Days Since Last Visit"] }}
+          {% endif %}
+        </td>        
+        <td class="next-visit">{{ row["Next Visit Forecast"] }}</td>
+        <td class="on-time-performance">{{ row["On-Time Performance"] }}</td>
+        <td class="priority-level" id="priority-level-{{ row['Site'] }}">{{ row["Priority Level"] if row.get("Priority Level") else "" }}</td>
+        <td>
+          <button onclick="logActualVisit('{{ row['Site'] }}')">Visited</button>
+        </td>
+      </tr>
+      {% endfor %}
+    {% endfor %}
+    </tbody>            
+  </table>
+</body>
+</html>

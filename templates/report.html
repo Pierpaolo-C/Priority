@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Report</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 20px; }
+    h2 { margin-top: 30px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+    th, td { border: 1px solid #ddd; padding: 8px; text-align: center; }
+    th { background-color: #f4f4f4; }
+    ul { list-style-type: none; padding: 0; }
+    li { margin: 5px 0; }
+  </style>
+</head>
+<body>
+  <h1>Zone Report</h1>
+  {% if error %}
+    <p style="color: red;">{{ error }}</p>
+  {% endif %}
+  
+  {% for zone, data in report_data.items() if zone != 'Grand Total' %}
+    <h2>Zone: {{ zone }}</h2>
+    
+    <h3>Overall</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Visits</th>
+          <th>Total Trip Cost</th>
+          <th>Robots Fixed</th>
+          <th>Average Trip Cost</th>
+          <th>Average Delay</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>{{ data.overall.Visits }}</td>
+          <td>{{ data.overall["Total Trip Cost"] }}</td>
+          <td>{{ data.overall["Robots Fixed"] }}</td>
+          <td>{{ data.overall["Average Trip Cost"] }}</td>
+          <td>
+            {% if data.overall["Average Delay"] < 0 %}
+              {{ (-data.overall["Average Delay"]) | round(2) }} days early
+            {% elif data.overall["Average Delay"] > 0 %}
+              {{ data.overall["Average Delay"] | round(2) }} days late
+            {% else %}
+              On Time
+            {% endif %}
+          </td>
+        </tr>
+      </tbody>
+    </table>
+    
+    <h3>Weekly Report</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Week (End Date)</th>
+          <th>Trip Cost</th>
+          <th>Visits</th>
+          <th>Robots Fixed</th>
+          <th>Avg Delay</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for week, values in data.weekly.items() %}
+          <tr>
+            <td>{{ week }}</td>
+            <td>{{ values.Trip_Cost }}</td>
+            <td>{{ values.Visits }}</td>
+            <td>{{ values.Robots_Fixed }}</td>
+            <td>
+              {% if values.Delay_Days is not none %}
+                {% if values.Delay_Days < 0 %}
+                  {{ (-values.Delay_Days) | round(2) }} days early
+                {% elif values.Delay_Days > 0 %}
+                  {{ values.Delay_Days | round(2) }} days late
+                {% else %}
+                  On Time
+                {% endif %}
+              {% else %} N/A {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    
+    <h3>Monthly Report</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Month</th>
+          <th>Trip Cost</th>
+          <th>Visits</th>
+          <th>Robots Fixed</th>
+          <th>Avg Delay</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for month, values in data.monthly.items() %}
+          <tr>
+            <td>{{ month }}</td>
+            <td>{{ values.Trip_Cost }}</td>
+            <td>{{ values.Visits }}</td>
+            <td>{{ values.Robots_Fixed }}</td>
+            <td>
+              {% if values.Delay_Days is not none %}
+                {% if values.Delay_Days < 0 %}
+                  {{ (-values.Delay_Days) | round(2) }} days early
+                {% elif values.Delay_Days > 0 %}
+                  {{ values.Delay_Days | round(2) }} days late
+                {% else %}
+                  On Time
+                {% endif %}
+              {% else %} N/A {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    
+    <h3>Yearly Report</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Year</th>
+          <th>Trip Cost</th>
+          <th>Visits</th>
+          <th>Robots Fixed</th>
+          <th>Avg Delay</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for year, values in data.yearly.items() %}
+          <tr>
+            <td>{{ year }}</td>
+            <td>{{ values.Trip_Cost }}</td>
+            <td>{{ values.Visits }}</td>
+            <td>{{ values.Robots_Fixed }}</td>
+            <td>
+              {% if values.Delay_Days is not none %}
+                {% if values.Delay_Days < 0 %}
+                  {{ (-values.Delay_Days) | round(2) }} days early
+                {% elif values.Delay_Days > 0 %}
+                  {{ values.Delay_Days | round(2) }} days late
+                {% else %}
+                  On Time
+                {% endif %}
+              {% else %} N/A {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% endfor %}
+  
+  <h2>Grand Total</h2>
+  <h3>Overall Summary</h3>
+  <ul>
+      <li><b>Total Visits:</b> {{ report_data["Grand Total"]["overall"]["Visits"] }}</li>
+      <li><b>Total Trip Cost:</b> €{{ report_data["Grand Total"]["overall"]["Total Trip Cost"] }}</li>
+      <li><b>Total Robots Fixed:</b> {{ report_data["Grand Total"]["overall"]["Robots Fixed"] }}</li>
+      <li><b>Average Trip Cost:</b> €{{ report_data["Grand Total"]["overall"]["Average Trip Cost"] }}</li>
+      <li><b>Average Delay:</b> 
+          {% if report_data["Grand Total"]["overall"]["Average Delay"] < 0 %}
+            {{ (-report_data["Grand Total"]["overall"]["Average Delay"]) | round(2) }} days early
+          {% elif report_data["Grand Total"]["overall"]["Average Delay"] > 0 %}
+            {{ report_data["Grand Total"]["overall"]["Average Delay"] | round(2) }} days late
+          {% else %} On Time {% endif %}
+      </li>
+  </ul>
+
+  <h3>Weekly Breakdown</h3>
+  <table>
+      <tr><th>Week</th><th>Trip Cost</th><th>Visits</th><th>Robots Fixed</th><th>Avg Delay</th></tr>
+      {% for date, values in report_data["Grand Total"]["weekly"].items() %}
+      <tr>
+          <td>{{ date }}</td>
+          <td>€{{ values["Trip_Cost"] }}</td>
+          <td>{{ values["Visits"] }}</td>
+          <td>{{ values["Robots_Fixed"] }}</td>
+          <td>
+            {% if values["Delay_Days"] is not none %}
+              {% if values["Delay_Days"] < 0 %}
+                {{ (-values["Delay_Days"]) | round(2) }} days early
+              {% elif values["Delay_Days"] > 0 %}
+                {{ values["Delay_Days"] | round(2) }} days late
+              {% else %} On Time {% endif %}
+            {% else %} N/A {% endif %}
+          </td>
+      </tr>
+      {% endfor %}
+  </table>
+
+  <h3>Monthly Breakdown</h3>
+  <table>
+      <tr><th>Month</th><th>Trip Cost</th><th>Visits</th><th>Robots Fixed</th><th>Avg Delay</th></tr>
+      {% for date, values in report_data["Grand Total"]["monthly"].items() %}
+      <tr>
+          <td>{{ date }}</td>
+          <td>€{{ values["Trip_Cost"] }}</td>
+          <td>{{ values["Visits"] }}</td>
+          <td>{{ values["Robots_Fixed"] }}</td>
+          <td>
+            {% if values["Delay_Days"] is not none %}
+              {% if values["Delay_Days"] < 0 %}
+                {{ (-values["Delay_Days"]) | round(2) }} days early
+              {% elif values["Delay_Days"] > 0 %}
+                {{ values["Delay_Days"] | round(2) }} days late
+              {% else %} On Time {% endif %}
+            {% else %} N/A {% endif %}
+          </td>
+      </tr>
+      {% endfor %}
+  </table>
+
+  <h3>Yearly Breakdown</h3>
+  <table>
+      <tr><th>Year</th><th>Trip Cost</th><th>Visits</th><th>Robots Fixed</th><th>Avg Delay</th></tr>
+      {% for date, values in report_data["Grand Total"]["yearly"].items() %}
+      <tr>
+          <td>{{ date }}</td>
+          <td>€{{ values["Trip_Cost"] }}</td>
+          <td>{{ values["Visits"] }}</td>
+          <td>{{ values["Robots_Fixed"] }}</td>
+          <td>
+            {% if values["Delay_Days"] is not none %}
+              {% if values["Delay_Days"] < 0 %}
+                {{ (-values["Delay_Days"]) | round(2) }} days early
+              {% elif values["Delay_Days"] > 0 %}
+                {{ values["Delay_Days"] | round(2) }} days late
+              {% else %} On Time {% endif %}
+            {% else %} N/A {% endif %}
+          </td>
+      </tr>
+      {% endfor %}
+  </table>
+  
+  <p><a href="/">Back to Main</a></p>
+  
+  <p>
+    <a href="/download_visit_log" style="font-size: 1.1em; font-weight: bold;">Download Visit Log CSV</a>
+  </p>
+  <p>
+    <a href="/download_report" style="font-size: 1.1em; font-weight: bold;">Download Report CSV</a>
+  </p>  
+</body>
+</html>
