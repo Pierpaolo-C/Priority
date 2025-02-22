@@ -14,8 +14,8 @@ This project is a web application designed to manage and prioritize tech visits 
 
 1. **Clone the repository:**
     ```bash
-    git clone https://github.com/yourusername/your-repo-name.git
-    cd your-repo-name
+    git clone https://github.com/https://github.com/Pierpaolo-C/Priority.git
+    cd Priority
 2. **Set up a Python virtual environment (optional but recommended):**
     python -m venv venv
     source venv/bin/activate   # On Windows use: venv\Scripts\activate
