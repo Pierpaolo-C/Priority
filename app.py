@@ -451,10 +451,12 @@ def log_actual_visit():
 
 @app.route("/report")
 def report():
+    # Read the visit_log data from the database.
     conn = sqlite3.connect(DB_FILE)
     df_log = pd.read_sql_query("SELECT * FROM visit_log", conn, parse_dates=["Visit_Date"])
     conn.close()
     
+    # If there is no visit log data, create an empty report_data structure.
     if df_log.empty:
         report_data = {
             "Grand Total": {
@@ -472,52 +474,65 @@ def report():
         }
         return render_template("report.html", report_data=report_data, error="No visit data available.")
     
+    # Drop rows with no actual visit date (we only want completed visits)
     df_log = df_log.dropna(subset=["Visit_Date"])
-
     df_log.set_index("Visit_Date", inplace=True)
     
+    # Group daily by Zone.
+    # For each day and zone:
+    # - Trip_Cost: maximum cost of that day,
+    # - Robots_Fixed: sum,
+    # - Visits: count unique sites,
+    # - Delay_Days: we'll compute a weighted delay later.
     daily = df_log.groupby(["Zone", pd.Grouper(freq="D")]).agg({
         "Trip_Cost": "max",
         "Robots_Fixed": "sum",
         "Site": pd.Series.nunique,
-        "Delay_Days": "mean"
+        "Delay_Days": "mean"   # initial mean (will be replaced by weighted calc)
     }).rename(columns={"Site": "Visits"})
     daily = daily.reset_index()
     
+    # Initialize report_data dict.
     report_data = {}
     zones = daily["Zone"].unique()
+    
     for zone in zones:
         zone_daily = daily[daily["Zone"] == zone].copy()
         zone_daily.set_index("Visit_Date", inplace=True)
         
+        # Resample weekly, monthly, and yearly for basic sums.
         weekly = zone_daily.resample("W").agg({
             "Trip_Cost": "sum",
             "Robots_Fixed": "sum",
             "Visits": "sum"
         })
-        # Compute weighted average for Delay_Days
-        weekly["Delay_Days"] = (zone_daily["Delay_Days"] * zone_daily["Visits"]).resample("W").sum() / zone_daily["Visits"].resample("W").sum()
-
         monthly = zone_daily.resample("M").agg({
             "Trip_Cost": "sum",
             "Robots_Fixed": "sum",
             "Visits": "sum"
         })
-        monthly["Delay_Days"] = (zone_daily["Delay_Days"] * zone_daily["Visits"]).resample("M").sum() / zone_daily["Visits"].resample("M").sum()
-
         yearly = zone_daily.resample("Y").agg({
             "Trip_Cost": "sum",
             "Robots_Fixed": "sum",
             "Visits": "sum"
         })
-        yearly["Delay_Days"] = (zone_daily["Delay_Days"] * zone_daily["Visits"]).resample("Y").sum() / zone_daily["Visits"].resample("Y").sum()
-
         
+        # Compute weighted average Delay_Days for each period.
+        # (Multiply each day's delay by its visit count, sum, then divide by total visits)
+        weekly_weighted = (zone_daily["Delay_Days"] * zone_daily["Visits"]).resample("W").sum() / zone_daily["Visits"].resample("W").sum()
+        monthly_weighted = (zone_daily["Delay_Days"] * zone_daily["Visits"]).resample("M").sum() / zone_daily["Visits"].resample("M").sum()
+        yearly_weighted = (zone_daily["Delay_Days"] * zone_daily["Visits"]).resample("Y").sum() / zone_daily["Visits"].resample("Y").sum()
+        
+        weekly["Delay_Days"] = weekly_weighted.fillna(0)
+        monthly["Delay_Days"] = monthly_weighted.fillna(0)
+        yearly["Delay_Days"] = yearly_weighted.fillna(0)
+        
+        # Compute overall zone values using weighted average for Delay_Days.
         overall_visits = int(zone_daily["Visits"].sum())
         overall_trip_cost = zone_daily["Trip_Cost"].sum()
         overall_robots_fixed = int(zone_daily["Robots_Fixed"].sum())
         overall_avg_trip_cost = overall_trip_cost / overall_visits if overall_visits > 0 else 0
-        overall_avg_delay = zone_daily["Delay_Days"].mean() if zone_daily["Delay_Days"].notnull().any() else 0
+        overall_weighted_delay = (zone_daily["Delay_Days"] * zone_daily["Visits"]).sum() / overall_visits if overall_visits > 0 else 0
         
         report_data[zone] = {
             "weekly": weekly.to_dict(orient="index"),
@@ -528,67 +543,54 @@ def report():
                 "Total Trip Cost": overall_trip_cost,
                 "Robots Fixed": overall_robots_fixed,
                 "Average Trip Cost": round(overall_avg_trip_cost, 2),
-                "Average Delay": round(overall_avg_delay, 2) if overall_avg_delay is not None else 0
+                "Average Delay": round(overall_weighted_delay, 2)
             }
         }
     
-    all_weekly = []
-    all_monthly = []
-    all_yearly = []
+    # Grand Total across zones:
     total_visits = 0
     total_trip_cost = 0
     total_robots_fixed = 0
-    total_delay = 0
-    delay_count = 0
+    total_delay = 0  # Sum of (zone weighted delay * zone visits)
     
     for zone_data in report_data.values():
-        all_weekly.append(pd.DataFrame.from_dict(zone_data["weekly"], orient="index"))
-        all_monthly.append(pd.DataFrame.from_dict(zone_data["monthly"], orient="index"))
-        all_yearly.append(pd.DataFrame.from_dict(zone_data["yearly"], orient="index"))
         total_visits += zone_data["overall"]["Visits"]
         total_trip_cost += zone_data["overall"]["Total Trip Cost"]
         total_robots_fixed += zone_data["overall"]["Robots Fixed"]
-        if zone_data["overall"]["Visits"] > 0:
-            total_delay += zone_data["overall"]["Average Delay"] * zone_data["overall"]["Visits"]
-            delay_count += zone_data["overall"]["Visits"]
-    
-    if all_weekly:
-        grand_weekly = pd.concat(all_weekly).groupby(level=0).sum()
-        
-        # Correcting the Delay_Days calculation
-        grand_weekly["Delay_Days"] = (
-            pd.concat(all_weekly).groupby(level=0).apply(
-                lambda df: (df["Delay_Days"] * df["Visits"]).sum() / df["Visits"].sum()
-                if df["Visits"].sum() > 0 else 0
-            )
-        )
-    else:
-        grand_weekly = pd.DataFrame()
-
-    if all_monthly:
-        grand_monthly = pd.concat(all_monthly).groupby(level=0).sum()
-        grand_monthly["Delay_Days"] = (
-            pd.concat(all_monthly).groupby(level=0).apply(
-                lambda df: (df["Delay_Days"] * df["Visits"]).sum() / df["Visits"].sum()
-                if df["Visits"].sum() > 0 else 0
-            )
-        )
-    else:
-        grand_monthly = pd.DataFrame()
-    
-    if all_yearly:
-        grand_yearly = pd.concat(all_yearly).groupby(level=0).sum()
-        grand_yearly["Delay_Days"] = (
-            pd.concat(all_yearly).groupby(level=0).apply(
-                lambda df: (df["Delay_Days"] * df["Visits"]).sum() / df["Visits"].sum()
-                if df["Visits"].sum() > 0 else 0
-            )
-        )
-    else:
-        grand_yearly = pd.DataFrame()
+        total_delay += zone_data["overall"]["Average Delay"] * zone_data["overall"]["Visits"]
     
     grand_avg_trip_cost = total_trip_cost / total_visits if total_visits > 0 else 0
-    grand_avg_delay = total_delay / delay_count if delay_count > 0 else 0
+    grand_avg_delay = total_delay / total_visits if total_visits > 0 else 0
+    
+    # Consolidate breakdowns across zones.
+    if report_data:
+        all_weekly = [pd.DataFrame.from_dict(z["weekly"], orient="index") for z in report_data.values()]
+        all_monthly = [pd.DataFrame.from_dict(z["monthly"], orient="index") for z in report_data.values()]
+        all_yearly = [pd.DataFrame.from_dict(z["yearly"], orient="index") for z in report_data.values()]
+        grand_weekly = pd.concat(all_weekly).groupby(level=0).sum()
+        grand_monthly = pd.concat(all_monthly).groupby(level=0).sum()
+        grand_yearly = pd.concat(all_yearly).groupby(level=0).sum()
+        
+        # Recompute consolidated weighted delay for each period.
+        def compute_consolidated_delay(dfs):
+            combined = pd.concat(dfs)
+            def weighted_avg(df):
+                total = df["Visits"].sum()
+                return (df["Delay_Days"] * df["Visits"]).sum() / total if total > 0 else 0
+            result = combined.groupby(level=0).apply(weighted_avg)
+            return result.to_dict()
+        
+        consolidated_weekly_delay = compute_consolidated_delay(all_weekly)
+        consolidated_monthly_delay = compute_consolidated_delay(all_monthly)
+        consolidated_yearly_delay = compute_consolidated_delay(all_yearly)
+        
+        grand_weekly = grand_weekly.assign(Delay_Days=consolidated_weekly_delay)
+        grand_monthly = grand_monthly.assign(Delay_Days=consolidated_monthly_delay)
+        grand_yearly = grand_yearly.assign(Delay_Days=consolidated_yearly_delay)
+    else:
+        grand_weekly = pd.DataFrame()
+        grand_monthly = pd.DataFrame()
+        grand_yearly = pd.DataFrame()
     
     report_data["Grand Total"] = {
         "weekly": grand_weekly.to_dict(orient="index"),
@@ -602,6 +604,7 @@ def report():
             "Average Delay": round(grand_avg_delay, 2)
         }
     }
+    
     return render_template("report.html", report_data=report_data, error=None)
     
 @app.route('/download_visit_log')
